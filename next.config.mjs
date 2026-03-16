@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     output: 'export',
-    basePath: '/eastbrook-dashboard',
-    assetPrefix: '/eastbrook-dashboard/',
     images: { unoptimized: true },
+    basePath: process.env.NODE_ENV === 'production' ? '/eastbrook-dashboard' : '',
 };
 export default nextConfig;

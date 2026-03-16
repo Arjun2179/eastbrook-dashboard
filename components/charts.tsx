@@ -5,142 +5,144 @@ import { mean, round2 } from "@/lib/utils";
 import {
   ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, Tooltip, Legend,
-  BarChart, Bar,
-  CartesianGrid,
-  ScatterChart, Scatter,
+  AreaChart, Area, ComposedChart
 } from "recharts";
 
-export function TrendLines({ rows }: { rows: Row[] }) {
-  // aggregate by day + phase
-  const key = (d: number, p: string) => `${d}|${p}`;
-  const map = new Map<string, Row[]>();
-  for (const r of rows) {
-    const k = key(r.day, r.phase);
-    if (!map.has(k)) map.set(k, []);
-    map.get(k)!.push(r);
-  }
+// Helper to aggregate data by day for the AS-IS storytelling
+function getDailyAggregates(rows: Row[]) {
   const days = Array.from(new Set(rows.map(r => r.day))).sort((a, b) => a - b);
-
-  const data = days.map((day) => {
-    const asis = map.get(key(day, "AS_IS")) ?? [];
-    const tobe = map.get(key(day, "TO_BE")) ?? [];
+  return days.map(day => {
+    const dayRows = rows.filter(r => r.day === day);
     return {
-      day,
-      asis_prompts: asis.length ? round2(mean(asis.map(r => r.ai_prompts_per_day))) : null,
-      tobe_prompts: tobe.length ? round2(mean(tobe.map(r => r.ai_prompts_per_day))) : null,
-      asis_verify: asis.length ? round2(mean(asis.map(r => r.verification_rate))) : null,
-      tobe_verify: tobe.length ? round2(mean(tobe.map(r => r.verification_rate))) : null,
+      day: `Day ${day}`,
+      prompts: dayRows.length ? round2(mean(dayRows.map(r => r.ai_prompts_per_day))) : null,
+      verification: dayRows.length ? round2(mean(dayRows.map(r => r.verification_rate)) * 100) : null,
+      eye_dryness: dayRows.length ? round2(mean(dayRows.map(r => r.eye_dryness_score))) : null,
+      neck_pain: dayRows.length ? round2(mean(dayRows.map(r => r.neck_pain_score))) : null,
     };
   });
+}
+
+// SLU High Data-To-Ink Ratio Global Settings
+const axisProps = {
+  tickLine: false,
+  axisLine: false,
+  tick: { fill: '#6b7280', fontSize: 12 }
+};
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white/95 backdrop-blur-sm p-3 border border-slate-200 shadow-xl rounded-xl">
+        <p className="font-semibold text-slate-900 mb-1">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <p key={`item-${index}`} className="text-sm font-medium" style={{ color: entry.color }}>
+            {entry.name}: {entry.value}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+export function SetupChart({ rows }: { rows: Row[] }) {
+  const data = getDailyAggregates(rows);
 
   return (
     <ResponsiveContainer width="100%" height={320}>
-      <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="day" />
-        <YAxis yAxisId="left" tickFormatter={(v) => String(v)} />
-        <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => String(v)} />
-        <Tooltip />
-        <Legend />
-        <Line yAxisId="left" type="monotone" dataKey="asis_prompts" name="AS‑IS prompts/day" strokeWidth={2} dot={false} connectNulls={false} />
-        <Line yAxisId="left" type="monotone" dataKey="tobe_prompts" name="TO‑BE prompts/day" strokeWidth={2} dot={false} connectNulls={false} />
-        <Line yAxisId="right" type="monotone" dataKey="asis_verify" name="AS‑IS verification rate" strokeWidth={2} dot={false} connectNulls={false} />
-        <Line yAxisId="right" type="monotone" dataKey="tobe_verify" name="TO‑BE verification rate" strokeWidth={2} dot={false} connectNulls={false} />
-      </LineChart>
+      <AreaChart data={data} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorPrompts" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        {/* NO GRIDLINES for high data-to-ink ratio */}
+        <XAxis dataKey="day" {...axisProps} />
+        <YAxis {...axisProps} />
+        <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#e5e7eb', strokeWidth: 2, strokeDasharray: "4 4" }} />
+        <Area 
+          type="monotone" 
+          dataKey="prompts" 
+          name="Avg Daily Prompts" 
+          stroke="#3b82f6" 
+          fillOpacity={1}
+          fill="url(#colorPrompts)"
+          strokeWidth={4} 
+        />
+      </AreaChart>
     </ResponsiveContainer>
   );
 }
 
-export function LatencyBars({ rows }: { rows: Row[] }) {
-  const asis = rows.filter(r => r.phase === "AS_IS");
-  const tobe = rows.filter(r => r.phase === "TO_BE");
-
-  const avg = (arr: Row[], key: keyof Row) => mean(arr.map(r => (r[key] as any) ?? 0).filter((x: any) => x != null));
-
-  const data = [
-    {
-      phase: "AS‑IS",
-      with_ai: round2(avg(asis, "decision_latency_with_ai_sec")),
-      without_ai: round2(avg(asis, "decision_latency_without_ai_sec"))
-    },
-    {
-      phase: "TO‑BE",
-      with_ai: round2(avg(tobe, "decision_latency_with_ai_sec")),
-      without_ai: round2(avg(tobe, "decision_latency_without_ai_sec"))
-    }
-  ];
-
-  return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="phase" />
-        <YAxis />
-        <Tooltip />
-        <Legend />
-        <Bar dataKey="with_ai" name="With AI (sec)" fill="#3b82f6" />
-        <Bar dataKey="without_ai" name="Without AI (sec)" fill="#eab308" />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function RiskBars({ rows }: { rows: Row[] }) {
-  const asis = rows.filter(r => r.phase === "AS_IS");
-  const tobe = rows.filter(r => r.phase === "TO_BE");
-
-  const data = [
-    {
-      phase: "AS‑IS",
-      accept_wo_ver: round2(mean(asis.map(r => r.accept_without_verification ? 1 : 0)) * 100),
-      error_rate: round2(mean(asis.map(r => r.error_rate)) * 100),
-      harmful: round2(mean(asis.map(r => r.harmful_exposure_count)))
-    },
-    {
-      phase: "TO‑BE",
-      accept_wo_ver: round2(mean(tobe.map(r => r.accept_without_verification ? 1 : 0)) * 100),
-      error_rate: round2(mean(tobe.map(r => r.error_rate)) * 100),
-      harmful: round2(mean(tobe.map(r => r.harmful_exposure_count)))
-    }
-  ];
-
-  return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="phase" />
-        <YAxis />
-        <Tooltip />
-        <Legend />
-        <Bar dataKey="accept_wo_ver" name="Accept w/o verification (%)" fill="#3b82f6" />
-        <Bar dataKey="error_rate" name="Error rate (%)" fill="#eab308" />
-        <Bar dataKey="harmful" name="Harmful exposure (avg count)" fill="#ef4444" />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function WellbeingScatter({ rows }: { rows: Row[] }) {
-  const data = rows.map(r => ({
-    screen_time_hours: r.screen_time_hours,
-    eye_dryness_score: r.eye_dryness_score,
-    phase: r.phase
-  }));
-
-  const asis = data.filter(d => d.phase === "AS_IS");
-  const tobe = data.filter(d => d.phase === "TO_BE");
+export function ConflictCognitiveChart({ rows }: { rows: Row[] }) {
+  const data = getDailyAggregates(rows);
 
   return (
     <ResponsiveContainer width="100%" height={320}>
-      <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="screen_time_hours" name="Screen time (hrs)" />
-        <YAxis dataKey="eye_dryness_score" name="Eye dryness score" />
-        <Tooltip cursor={{ strokeDasharray: "3 3" }} />
-        <Legend />
-        <Scatter name="AS‑IS" data={asis} fill="#ef4444" fillOpacity={0.5} />
-        <Scatter name="TO‑BE" data={tobe} fill="#3b82f6" fillOpacity={0.5} />
-      </ScatterChart>
+      <AreaChart data={data} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorVerif" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+            <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="day" {...axisProps} />
+        <YAxis {...axisProps} domain={[0, 100]} />
+        <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#e5e7eb', strokeWidth: 2, strokeDasharray: "4 4" }} />
+        <Area 
+          type="monotone" 
+          dataKey="verification" 
+          name="Verification Rate (%)" 
+          stroke="#ef4444" 
+          fillOpacity={1}
+          fill="url(#colorVerif)"
+          strokeWidth={4} 
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function ConflictPhysicalChart({ rows }: { rows: Row[] }) {
+  const data = getDailyAggregates(rows);
+
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <ComposedChart data={data} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="colorNeck" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2}/>
+            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="day" {...axisProps} />
+        <YAxis {...axisProps} domain={[0, 10]} />
+        <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc', stroke: '#e5e7eb', strokeWidth: 1, strokeDasharray: "4 4" }} />
+        <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+        
+        {/* Mixed Area and Line for advanced visualization */}
+        <Area 
+          type="monotone" 
+          dataKey="neck_pain" 
+          name="Neck Pain (Avg)" 
+          stroke="#f43f5e" 
+          fill="url(#colorNeck)"
+          strokeWidth={3} 
+          dot={{ r: 4, fill: '#fff', stroke: '#f43f5e', strokeWidth: 2 }}
+          activeDot={{ r: 7 }}
+        />
+        <Line 
+          type="monotone" 
+          dataKey="eye_dryness" 
+          name="Eye Dryness (Avg)" 
+          stroke="#f59e0b" 
+          strokeWidth={4} 
+          dot={{ r: 4, fill: '#fff', stroke: '#f59e0b', strokeWidth: 2 }}
+          activeDot={{ r: 7 }}
+        />
+      </ComposedChart>
     </ResponsiveContainer>
   );
 }

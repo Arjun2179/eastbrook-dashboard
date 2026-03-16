@@ -1,21 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Row } from "@/lib/types";
 import { loadRows } from "@/lib/data";
-import { Card, CardBody, CardHeader, Pill } from "@/components/ui";
-import { Filters, applyFilters, type FiltersState } from "@/components/filters";
-import { KpiCards } from "@/components/kpi-cards";
-import { TrendLines, LatencyBars, RiskBars, WellbeingScatter } from "@/components/charts";
+import { Card, CardBody } from "@/components/ui";
+import { SetupChart, ConflictCognitiveChart, ConflictPhysicalChart } from "@/components/charts";
 
 export function Dashboard() {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<FiltersState>({
-    phase: "ALL",
-    age_group: "ALL",
-    reliance_type: "ALL"
-  });
+
+  // Dynamic Filters
+  const [filterAge, setFilterAge] = useState<string>("All");
+  const [filterReliance, setFilterReliance] = useState<string>("All");
 
   useEffect(() => {
     loadRows()
@@ -23,29 +20,20 @@ export function Dashboard() {
       .catch((e) => setError(String(e?.message ?? e)));
   }, []);
 
-  const filtered = useMemo(() => applyFilters(rows, filters), [rows, filters]);
-
-  const counts = useMemo(() => ({
-    total: filtered.length,
-    users: new Set(filtered.map(r => r.user_id)).size,
-    days: new Set(filtered.map(r => r.day)).size
-  }), [filtered]);
+  const filteredRows = rows.filter((r) => {
+    if (filterAge !== "All" && r.age_group !== filterAge) return false;
+    if (filterReliance !== "All" && r.reliance_type !== filterReliance) return false;
+    return true;
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Dashboard</h1>
-          <p className="text-sm text-slate-600">
-            Explore how AI prompt frequency relates to verification, decision latency, and well‑being (AS‑IS vs TO‑BE).
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Pill>{counts.total.toLocaleString()} rows</Pill>
-            <Pill>{counts.users.toLocaleString()} users</Pill>
-            <Pill>{counts.days.toLocaleString()} days</Pill>
-          </div>
-        </div>
-        <Filters rows={rows} value={filters} onChange={setFilters} />
+    <div className="max-w-6xl mx-auto space-y-8 py-8 px-4">
+      {/* Title Header */}
+      <div className="text-center space-y-3">
+        <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Current Situation Analysis</h1>
+        <p className="text-lg text-slate-600 max-w-2xl mx-auto">
+          Unmoderated AI Usage at Eastbrook (AS-IS Phase)
+        </p>
       </div>
 
       {error ? (
@@ -54,54 +42,95 @@ export function Dashboard() {
             <div className="text-sm font-semibold text-rose-800">Failed to load dataset</div>
             <div className="text-xs text-rose-700">{error}</div>
             <div className="mt-2 text-xs text-rose-700">
-              Make sure the CSV exists at <code className="font-mono">public/data/synthetic_eastbrook_user_day.csv</code>.
+              Make sure the CSV exists at <code className="font-mono">public/data/dataset_1_extracted_asis.csv</code>.
             </div>
           </CardBody>
         </Card>
       ) : null}
 
-      <KpiCards rows={filtered} />
+      {/* Dynamic Filters Banner */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row gap-6 items-center justify-between z-10 relative">
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <span className="text-sm font-semibold text-slate-700">Filter By Reliance:</span>
+          <div className="flex bg-slate-100 p-1 rounded-lg">
+            {["All", "overreliance", "appropriate", "underreliance"].map((level) => (
+              <button
+                key={level}
+                onClick={() => setFilterReliance(level)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md capitalize transition-colors ${
+                  filterReliance === level 
+                    ? "bg-white text-indigo-600 shadow-sm ring-1 ring-slate-900/5" 
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                {level === "All" ? "All Students" : level}
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader
-            title="Visualization 1 — Trend (prompts/day + verification rate)"
-            subtitle="Daily aggregation with AS‑IS vs TO‑BE lines"
-          />
-          <CardBody>
-            <TrendLines rows={filtered} />
-          </CardBody>
-        </Card>
+        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+          <span className="text-sm font-semibold text-slate-700">Age Group:</span>
+          <div className="flex bg-slate-100 p-1 rounded-lg">
+            {["All", "13-14", "15-17"].map((age) => (
+              <button
+                key={age}
+                onClick={() => setFilterAge(age)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  filterAge === age 
+                    ? "bg-white text-indigo-600 shadow-sm ring-1 ring-slate-900/5" 
+                    : "text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                {age}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        <Card>
-          <CardHeader
-            title="Visualization 2 — Decision latency (with AI vs without AI)"
-            subtitle="Phase comparison using average latency"
-          />
-          <CardBody>
-            <LatencyBars rows={filtered} />
-          </CardBody>
-        </Card>
+      <div className="flex flex-col gap-10">
+        {/* Act 1: Setup */}
+        <section className="w-full">
+          <div className="mb-4">
+            <h2 className="text-3xl font-bold text-slate-800">1. Setup</h2>
+            <p className="text-lg text-slate-600 mt-1">Students are highly engaged with AI assistants for daily coursework.</p>
+          </div>
+          <Card className="shadow-2xl border-slate-200 overflow-hidden ring-1 ring-slate-900/5 transition-all hover:shadow-3xl">
+            <CardBody className="p-8">
+              <SetupChart rows={filteredRows} />
+            </CardBody>
+          </Card>
+        </section>
 
-        <Card>
-          <CardHeader
-            title="Visualization 3 — Overreliance & risk"
-            subtitle="Accept without verification, error rate, harmful exposure"
-          />
-          <CardBody>
-            <RiskBars rows={filtered} />
-          </CardBody>
-        </Card>
+        {/* Acts 2 & 3: Conflicts (Grid Layout) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 w-full">
+          {/* Act 2: Conflict 1 */}
+          <section>
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-slate-800">2. The Cognitive Conflict</h2>
+              <p className="text-rose-600 mt-1 font-medium">As usage remains high, independent fact-checking plateaus at dangerously low levels.</p>
+            </div>
+            <Card className="shadow-xl border-rose-100 overflow-hidden ring-1 ring-rose-900/5 bg-gradient-to-b from-white to-rose-50/30">
+              <CardBody className="p-6">
+                <ConflictCognitiveChart rows={filteredRows} />
+              </CardBody>
+            </Card>
+          </section>
 
-        <Card>
-          <CardHeader
-            title="Visualization 4 — Well‑being vs intensity"
-            subtitle="Scatter: screen time vs eye dryness (by phase)"
-          />
-          <CardBody>
-            <WellbeingScatter rows={filtered} />
-          </CardBody>
-        </Card>
+          {/* Act 3: Conflict 2 */}
+          <section>
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold text-slate-800">3. The Physical Conflict</h2>
+              <p className="text-amber-600 mt-1 font-medium">Sustained unmoderated usage triggers severe, chronic eye and neck strain.</p>
+            </div>
+            <Card className="shadow-xl border-amber-100 overflow-hidden ring-1 ring-amber-900/5 bg-gradient-to-b from-white to-amber-50/30">
+              <CardBody className="p-6">
+                <ConflictPhysicalChart rows={filteredRows} />
+              </CardBody>
+            </Card>
+          </section>
+        </div>
       </div>
     </div>
   );
